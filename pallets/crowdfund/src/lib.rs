@@ -43,24 +43,33 @@ pub mod pallet {
 	}
 
 	#[pallet::storage]
-	pub type Proyectos<T> =
-		StorageMap<_, Blake2_128Concat, BoundedString<T>, BalanceDe<T>, ValueQuery>;
+	#[pallet::getter(fn stage)]
+	pub type CrowdfundingStage<T> = StorageValue<_, Stage, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn projects)]
+	pub type Projects<T> =
+		StorageMap<_, Blake2_128Concat, BoundedString<T>, BalanceOf<T>, ValueQuery>;
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		ProyectoCreado { quien: T::AccountId, nombre: NombreProyecto<T> },
-		ProyectoApoyado { nombre: NombreProyecto<T>, cantidad: BalanceDe<T> },
+		/// El proyecto fue creado exitosamente
+    // ProjectCreated { who: T::AccountId, name: ProjectName<T> },
+    ProjectCreated { who: T::AccountId, },
+		/// El proyecto fue abonado exitosamente
+    ProjectSupported { name: ProjectName<T>, amount: BalanceOf<T> },
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
-		NombreMuyLargo,
-		NombreMuyCorto,
+		IncorrectStage,
+		NameTooLong,
+		NameTooShort,
 		/// El usuario quiso apoyar un proyecto con más fondos de los que dispone.
-		FondosInsuficientes,
+		InsufficientFunds,
 		/// El usuario quiso apoyar un proyecto inexistente.
-		ProyectoNoExiste,
+		ProjectDoesNotExist,
 	}
 
 	#[pallet::call]
@@ -68,13 +77,23 @@ pub mod pallet {
 		/// Crea un proyecto.
 		pub fn crear_proyecto(origen: OriginFor<T>, nombre: String) -> DispatchResult {
 			// Completar este método.
-			todo!()
+			let mut stage = CrowdfundingStage::<T>::get();
+			ensure!(matches!(stage, Stage::NameGeneration), Error::<T>::IncorrectStage);
+
+			let who = ensure_signed(origen)?;
+			// let mut Projects: <<T as Config>::Currency as Currency<<T as Config>::AccountId>>::Balance = Projects::<T>::get();
+			
+			stage.next();
+			CrowdfundingStage::<T>::set(stage);
+
+			Self::deposit_event(Event::ProjectCreated { who });
+			Ok(())
 		}
 
 		pub fn apoyar_proyecto(
 			origen: OriginFor<T>,
 			nombre: String,
-			cantidad: BalanceDe<T>,
+			cantidad: BalanceOf<T>,
 		) -> DispatchResult {
 			// Completar este método.
 			todo!()

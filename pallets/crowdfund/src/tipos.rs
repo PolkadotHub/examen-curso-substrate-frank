@@ -12,6 +12,12 @@ pub enum Stage {
   Fulfillment,
 }
 
+impl Default for Stage {
+	fn default() -> Self {
+		Self::NameGeneration
+	}
+}
+
 impl Stage {
 	pub fn next(&mut self) {
 		use Stage::*;
@@ -25,9 +31,9 @@ impl Stage {
 }
 
 pub type CuentaDe<T> = <T as frame_system::Config>::AccountId;
-pub type BalanceDe<T> = <<T as crate::Config>::Currency as Currency<CuentaDe<T>>>::Balance;
+pub type BalanceOf<T> = <<T as crate::Config>::Currency as Currency<CuentaDe<T>>>::Balance;
 
 pub type String = Vec<u8>;
 pub type BoundedString<T> = BoundedVec<u8, <T as crate::Config>::LargoMaximoNombreProyecto>;
 
-pub type NombreProyecto<T> = BoundedString<T>;
+pub type ProjectName<T> = BoundedString<T>;
