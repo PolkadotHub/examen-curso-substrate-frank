@@ -16,6 +16,7 @@ mod benchmarking;
 mod tipos;
 
 use frame_support::traits::{Currency, Get};
+use frame_support::sp_runtime::traits::{Zero, Saturating};
 use tipos::*;
 
 #[frame_support::pallet(dev_mode)]
@@ -55,21 +56,25 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		/// El proyecto fue creado exitosamente
-    // ProjectCreated { who: T::AccountId, name: ProjectName<T> },
-    ProjectCreated { who: T::AccountId, },
+    ProjectCreated { who: T::AccountId, name: ProjectName<T> },
 		/// El proyecto fue abonado exitosamente
     ProjectSupported { name: ProjectName<T>, amount: BalanceOf<T> },
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
+		/// Etapa incorrecta
 		IncorrectStage,
+		/// El nombre del proyecto es muy largo
 		NameTooLong,
+		/// El nombre del proyecto es muy corto
 		NameTooShort,
 		/// El usuario quiso apoyar un proyecto con más fondos de los que dispone.
 		InsufficientFunds,
 		/// El usuario quiso apoyar un proyecto inexistente.
 		ProjectDoesNotExist,
+		/// El proyecto ya esta registrado
+		ProjectAlreadyRegistered,
 	}
 
 	#[pallet::call]
@@ -81,12 +86,17 @@ pub mod pallet {
 			ensure!(matches!(stage, Stage::NameGeneration), Error::<T>::IncorrectStage);
 
 			let who = ensure_signed(origen)?;
-			// let mut Projects: <<T as Config>::Currency as Currency<<T as Config>::AccountId>>::Balance = Projects::<T>::get();
+			let project_name: ProjectName<T> = nombre.try_into().map_err(|_| Error::<T>::NameTooLong)?;
+
+			ensure!(!Projects::<T>::contains_key(&project_name), Error::<T>::ProjectAlreadyRegistered);
+
+			let initial_balance = BalanceOf::<T>::zero();
+			Projects::<T>::insert(&project_name, initial_balance);
 			
 			stage.next();
 			CrowdfundingStage::<T>::set(stage);
 
-			Self::deposit_event(Event::ProjectCreated { who });
+			Self::deposit_event(Event::ProjectCreated { who, name: project_name });
 			Ok(())
 		}
 
@@ -95,8 +105,20 @@ pub mod pallet {
 			nombre: String,
 			cantidad: BalanceOf<T>,
 		) -> DispatchResult {
-			// Completar este método.
-			todo!()
+			let stage = CrowdfundingStage::<T>::get();
+			ensure!(matches!(stage, Stage::FundCollection), Error::<T>::IncorrectStage);
+
+			let who = ensure_signed(origen)?;
+
+			let project_name: ProjectName<T> = nombre.try_into().map_err(|_| Error::<T>::NameTooLong)?;
+			ensure!(Projects::<T>::contains_key(&project_name), Error::<T>::ProjectDoesNotExist);
+
+			let mut project_balance = Projects::<T>::get(&project_name);
+			project_balance = project_balance.saturating_add(cantidad);
+			Projects::<T>::insert(&project_name, project_balance);
+
+			Self::deposit_event(Event::ProjectSupported { name: project_name, amount: cantidad });
+			Ok(())
 		}
 	}
 }
