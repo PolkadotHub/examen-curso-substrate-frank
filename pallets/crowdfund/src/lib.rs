@@ -15,7 +15,8 @@ mod benchmarking;
 
 mod tipos;
 
-use frame_support::traits::{Currency, Get};
+use frame_support::traits::{Currency, Get, WithdrawReasons, ExistenceRequirement};
+use frame_support::sp_runtime::traits::{Zero, Saturating};
 use tipos::*;
 
 #[frame_support::pallet(dev_mode)]
@@ -43,24 +44,39 @@ pub mod pallet {
 	}
 
 	#[pallet::storage]
-	pub type Proyectos<T> =
-		StorageMap<_, Blake2_128Concat, BoundedString<T>, BalanceDe<T>, ValueQuery>;
+	#[pallet::getter(fn stage)]
+	pub type CrowdfundingStage<T> = StorageValue<_, Stage, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn projects)]
+	pub type Projects<T> =
+		StorageMap<_, Blake2_128Concat, BoundedString<T>, BalanceOf<T>, ValueQuery>;
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		ProyectoCreado { quien: T::AccountId, nombre: NombreProyecto<T> },
-		ProyectoApoyado { nombre: NombreProyecto<T>, cantidad: BalanceDe<T> },
+		/// El proyecto fue creado exitosamente
+    ProjectCreated { who: T::AccountId, name: ProjectName<T> },
+		/// El proyecto fue abonado exitosamente
+    ProjectSupported { name: ProjectName<T>, amount: BalanceOf<T> },
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
-		NombreMuyLargo,
-		NombreMuyCorto,
+		/// Etapa incorrecta
+		IncorrectStage,
+		/// El nombre del proyecto es muy largo
+		NameTooLong,
+		/// El nombre del proyecto es muy corto
+		NameTooShort,
 		/// El usuario quiso apoyar un proyecto con más fondos de los que dispone.
-		FondosInsuficientes,
+		InsufficientFunds,
 		/// El usuario quiso apoyar un proyecto inexistente.
-		ProyectoNoExiste,
+		ProjectDoesNotExist,
+		/// El proyecto ya esta registrado
+		ProjectAlreadyRegistered,
+		/// Fondos insuficientes
+		InsufucientFunds,
 	}
 
 	#[pallet::call]
@@ -68,16 +84,50 @@ pub mod pallet {
 		/// Crea un proyecto.
 		pub fn crear_proyecto(origen: OriginFor<T>, nombre: String) -> DispatchResult {
 			// Completar este método.
-			todo!()
+			let mut stage = CrowdfundingStage::<T>::get();
+			ensure!(matches!(stage, Stage::NameGeneration), Error::<T>::IncorrectStage);
+
+			let who = ensure_signed(origen)?;
+
+			ensure!(nombre.len() >= 4, Error::<T>::NameTooShort);
+			let project_name: ProjectName<T> = nombre.try_into().map_err(|_| Error::<T>::NameTooLong)?;
+
+			ensure!(!Projects::<T>::contains_key(&project_name), Error::<T>::ProjectAlreadyRegistered);
+
+			let initial_balance = BalanceOf::<T>::zero();
+			Projects::<T>::insert(&project_name, initial_balance);
+			
+			stage.next();
+			CrowdfundingStage::<T>::set(stage);
+
+			Self::deposit_event(Event::ProjectCreated { who, name: project_name });
+			Ok(())
 		}
 
 		pub fn apoyar_proyecto(
 			origen: OriginFor<T>,
 			nombre: String,
-			cantidad: BalanceDe<T>,
+			cantidad: BalanceOf<T>,
 		) -> DispatchResult {
-			// Completar este método.
-			todo!()
+			let stage = CrowdfundingStage::<T>::get();
+			ensure!(matches!(stage, Stage::FundCollection), Error::<T>::IncorrectStage);
+
+			let who = ensure_signed(origen)?;
+
+			let project_name: ProjectName<T> = nombre.try_into().map_err(|_| Error::<T>::NameTooLong)?;
+			ensure!(Projects::<T>::contains_key(&project_name), Error::<T>::ProjectDoesNotExist);
+
+			let user_balance = T::Currency::free_balance(&who);
+			ensure!(user_balance >= cantidad, Error::<T>::InsufucientFunds);
+
+			let _ = T::Currency::withdraw(&who, cantidad, WithdrawReasons::TRANSFER, ExistenceRequirement::KeepAlive)?;
+
+			let mut project_balance = Projects::<T>::get(&project_name);
+			project_balance = project_balance.saturating_add(cantidad);
+			Projects::<T>::insert(&project_name, project_balance);
+
+			Self::deposit_event(Event::ProjectSupported { name: project_name, amount: cantidad });
+			Ok(())
 		}
 	}
 }
